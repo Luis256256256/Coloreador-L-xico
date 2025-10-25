@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QPlainTextEdit,
-    QMenuBar, QMenu, QFileDialog, QStatusBar
+    QMenuBar, QMenu, QFileDialog, QStatusBar, QWidget, QMessageBox
 )
 from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QColor, QFont, QAction
 from PySide6.QtCore import Qt, QRegularExpression
@@ -74,19 +74,41 @@ class PHPHighlighter(QSyntaxHighlighter):
     
 
 
+ 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Editor php")
         self.editor = QPlainTextEdit()
         self.setCentralWidget(self.editor)
+        self.setStyleSheet("QPlainTextEdit { background-color: #483a69; }")
         self.highlighter = PHPHighlighter(self.editor.document())
         self.create_menu()
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.editor.textChanged.connect(self.on_text_changed)
 
-
+    def mostrar_notificacion(self, titulo: str, mensaje: str, tipo: str):
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(titulo)
+        msg_box.setText(mensaje)
+        if tipo == 'inf':
+            msg_box.setIcon(QMessageBox.Information) 
+            
+        elif tipo == 'war':
+            msg_box.setIcon(QMessageBox.Warning) 
+            
+        elif tipo == 'crit':
+            msg_box.setIcon(QMessageBox.Critical) 
+            
+        else:
+            msg_box.setIcon(QMessageBox.Information)
+            
+            
+        
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.exec()
 
     
 
@@ -95,18 +117,70 @@ class MainWindow(QMainWindow):
         self.update_status_bar(stats)
 
 
+    def validate(self):
+        texto = self.editor.toPlainText()
+        
+
+        errors = self.validate_php_lexemes(texto)
+
+        if errors:
+            for lineno, content in errors:
+                print(f"Error léxico en línea {lineno}: {content}")
+                self.mostrar_notificacion( "Error detectado" ,f"Error léxico en línea {lineno}: {content}", "Critical" )
+
+        else:
+            self.mostrar_notificacion( "Correcto" ,f"Sin errores", "inf" )
+            print("Sin errores lexicos detectados.")
+
+    def validate_php_lexemes(self, text: str):
+
+        PHP_TOKENS = {
+        'reservadas': r'\b(?:if|else|while|for|function|return|echo|class|public|private|protected)\b',
+        'variables': r'\$[a-zA-Z_]\w*',
+        'cadenas': r'"[^"]*"|\'[^\']*\'',
+        'numeros': r'\b\d+(\.\d+)?\b',
+        'operadores': r'[+\-*/=<>!]+',
+        'puntuacion': r'[{}();,]',
+        'comentarios': r'//.*?$|/\*.*?\*/',}
+        errors = []
+        lines = text.split('\n')
+
+        for lineno, line in enumerate(lines, start=1):
+            matched = False
+            for name, pattern in PHP_TOKENS.items():
+                if re.search(pattern, line):
+                    matched = True
+                    self.status_bar.setStyleSheet("color: green;")
+                    self.status_bar.showMessage(f"Valido")
+                    break
+            if not matched and line.strip():  # línea no vacía sin tokens válidos
+                errors.append((lineno, line.strip()))
+                self.status_bar.setStyleSheet("color: red;")
+                self.status_bar.showMessage(f"No valido")
+                break
+        return errors
+
+            
+            
+        
+
+
     def create_menu(self):
         menu_bar = self.menuBar()
 
         file_menu = menu_bar.addMenu("Opciones")
+        
+        validacion_menu = menu_bar.addMenu("Validacion")
 
         open_action = QAction("Abrir", self)
         open_action.triggered.connect(self.open_file)
         file_menu.addAction(open_action)
 
-        open_action = QAction("Mostrar estadisticas", self)
-        open_action.triggered.connect(self.show_stats)
-        file_menu.addAction(open_action)
+        open_action = QAction("Validar", self)
+        open_action.triggered.connect(self.validate)
+        validacion_menu.addAction(open_action)
+
+        
 
         save_action = QAction("Guardar", self)
         save_action.triggered.connect(self.save_file)
@@ -120,12 +194,7 @@ class MainWindow(QMainWindow):
         total = sum(len(lexemes) for lexemes in lexeme_stats.values())
         print(lexeme_stats)
         unrecognized = lexeme_stats.get("unrecognized", {})
-        if unrecognized:
-            self.status_bar.setStyleSheet("color: red;")
-            self.status_bar.showMessage(f"No valido")
-        else:
-            self.status_bar.setStyleSheet("color: green;")
-            self.status_bar.showMessage(f"Valido")
+        
 
     def open_file(self):
         file_name, _ = QFileDialog.getOpenFileName(self, "Abrir archivo", "", "Scripts php (*.php)")
@@ -139,12 +208,7 @@ class MainWindow(QMainWindow):
             with open(file_name, "w", encoding="utf-8") as f:
                 f.write(self.editor.toPlainText())
 
-    def show_stats(self):
-        stats = self.highlighter.get_lexeme_stats()
-        for category, lexemes in stats.items():
-            print(f"\n{category.upper()}:")
-            for lex, count in lexemes.items():
-                print(f"  {lex}: {count}")
+
 
 
 
